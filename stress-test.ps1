@@ -90,7 +90,7 @@ function Invoke-StressRequest {
 # Exécution d'un palier de stress avec une approche synchrone
 function Invoke-StressStep {
     param(
-        [int]$Step,
+        $Step,  # Peut être int ou string
         [int]$Users,
         [int]$Duration,
         [string]$BaseUrl
