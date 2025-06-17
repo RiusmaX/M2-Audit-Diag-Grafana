@@ -1,0 +1,43 @@
+{
+  "name": "gatling-js-universal-tester",
+  "version": "1.0.0",
+  "description": "Script Gatling JavaScript universel pour tester n'importe quelle URL",
+  "main": "gatling-js-universal-test.js",
+  "type": "module",
+  "scripts": {
+    "test": "gatling run --simulation gatling-js-universal-test.js",
+    "test:simple": "npm run test -- --env TARGET_URL=http://localhost:3001",
+    "test:google": "npm run test -- --env TARGET_URL=https://www.google.com",
+    "test:stress": "npm run test -- --env TARGET_URL=http://localhost:3001 --env ENABLE_STRESS=true",
+    "test:custom": "npm run test -- --env TARGET_URL=${TARGET_URL:-http://localhost:3001} --env ENDPOINTS=${ENDPOINTS:-/} --env HTTP_METHODS=${HTTP_METHODS:-GET}",
+    "install-gatling": "npm install -g @gatling.io/cli",
+    "setup": "npm run install-gatling && npm install"
+  },
+  "dependencies": {
+    "@gatling.io/js-sdk": "^3.9.0"
+  },
+  "devDependencies": {
+    "@gatling.io/cli": "^3.9.0"
+  },
+  "keywords": [
+    "gatling",
+    "load-testing",
+    "performance",
+    "javascript",
+    "universal",
+    "api-testing"
+  ],
+  "author": "Assistant IA",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/user/gatling-js-universal-tester.git"
+  },
+  "bugs": {
+    "url": "https://github.com/user/gatling-js-universal-tester/issues"
+  },
+  "homepage": "https://github.com/user/gatling-js-universal-tester#readme"
+} 
