@@ -1,0 +1,111 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "🚀 Monitoring Application Express - 6 Endpoints",
+    "tags": ["express", "api", "endpoints", "demo"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "📱 Statut Application",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"express-app\"}",
+            "legendFormat": "Status"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "🔥 Requêtes/sec",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"express-app\"}[1m])",
+            "legendFormat": "RPS"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "⏱️ Temps Réponse",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_request_duration_seconds_sum{job=\"express-app\"}[5m]) / rate(http_request_duration_seconds_count{job=\"express-app\"}[5m])",
+            "legendFormat": "Avg Response Time"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "🔗 Connexions Actives",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "active_connections{job=\"express-app\"}",
+            "legendFormat": "Active Connections"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "🚀 Trafic par Endpoint",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"express-app\"}[1m])",
+            "legendFormat": "{{method}} {{endpoint}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "id": 6,
+        "title": "📊 Codes de Statut",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "increase(http_requests_total{job=\"express-app\"}[5m])",
+            "legendFormat": "{{status_code}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "id": 7,
+        "title": "🏢 Opérations Métier",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(business_operations_total{job=\"express-app\"}[1m])",
+            "legendFormat": "{{operation}} - {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "id": 8,
+        "title": "💳 Statuts Paiements",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "increase(business_operations_total{job=\"express-app\", operation=\"payment\"}[5m])",
+            "legendFormat": "{{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      }
+    ],
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "refresh": "5s"
+  }
+} 

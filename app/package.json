@@ -1,0 +1,27 @@
+{
+  "name": "express-monitoring-demo",
+  "version": "1.0.0",
+  "description": "Application Express avec monitoring Prometheus pour démo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "prom-client": "^15.1.0",
+    "response-time": "^2.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "express",
+    "prometheus",
+    "monitoring",
+    "grafana",
+    "demo"
+  ],
+  "author": "Assistant IA",
+  "license": "MIT"
+} 

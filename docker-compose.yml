@@ -91,6 +91,25 @@ services:
     networks:
       - monitoring
 
+  # Application Express de démo
+  express-app:
+    build: ./app
+    container_name: express-demo-app
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - monitoring
+
 volumes:
   prometheus_data:
   grafana_data:

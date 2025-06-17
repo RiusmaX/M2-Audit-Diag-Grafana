@@ -36,4 +36,11 @@ scrape_configs:
     static_configs:
       - targets: ['grafana:3000']
     scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Monitoring de l'application Express
+  - job_name: 'express-app'
+    static_configs:
+      - targets: ['express-app:3001']
+    scrape_interval: 5s
     metrics_path: /metrics 
