@@ -40,12 +40,11 @@ function Get-SystemMetrics {
     }
 }
 
-# Fonction de requête de stress
+# Fonction de requête de stress simplifiée
 function Invoke-StressRequest {
     param(
         [int]$UserId,
-        [string]$BaseUrl,
-        [ref]$StepStats
+        [string]$BaseUrl
     )
     
     # Sélection aléatoire d'endpoint
@@ -62,69 +61,33 @@ function Invoke-StressRequest {
     $url = "$BaseUrl$($selectedEndpoint.Endpoint)"
     
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $success = $false
     
     try {
         if ($selectedEndpoint.Body) {
             $jsonBody = $selectedEndpoint.Body | ConvertTo-Json
             $response = Invoke-RestMethod -Uri $url -Method $selectedEndpoint.Method -Body $jsonBody -ContentType "application/json" -TimeoutSec 10
-            $success = $true
         } else {
             $response = Invoke-RestMethod -Uri $url -Method $selectedEndpoint.Method -TimeoutSec 10
-            $success = $true
         }
+        $success = $true
     }
     catch {
         $success = $false
     }
     finally {
         $stopwatch.Stop()
-        $responseTime = $stopwatch.ElapsedMilliseconds
-        
-        # Mise à jour thread-safe des statistiques
-        $lockTaken = $false
-        try {
-            [System.Threading.Monitor]::Enter($StepStats.Value, [ref]$lockTaken)
-            
-            $StepStats.Value.TotalRequests++
-            $StepStats.Value.TotalResponseTime += $responseTime
-            
-            if ($responseTime -lt $StepStats.Value.MinResponseTime) {
-                $StepStats.Value.MinResponseTime = $responseTime
-            }
-            if ($responseTime -gt $StepStats.Value.MaxResponseTime) {
-                $StepStats.Value.MaxResponseTime = $responseTime
-            }
-            
-            if ($success) {
-                $StepStats.Value.SuccessfulRequests++
-            } else {
-                $StepStats.Value.FailedRequests++
-            }
-        }
-        finally {
-            if ($lockTaken) {
-                [System.Threading.Monitor]::Exit($StepStats.Value)
-            }
-        }
     }
-}
-
-# Scénario utilisateur pour stress test
-function Start-StressUser {
-    param(
-        [int]$UserId,
-        [string]$BaseUrl,
-        [ref]$StepStats,
-        [ref]$StepRunning
-    )
     
-    while ($StepRunning.Value) {
-        Invoke-StressRequest -UserId $UserId -BaseUrl $BaseUrl -StepStats $StepStats
-        Start-Sleep -Milliseconds (Get-Random -Minimum 50 -Maximum 200)
+    return @{
+        Success = $success
+        ResponseTime = $stopwatch.ElapsedMilliseconds
+        Endpoint = $selectedEndpoint.Endpoint
+        Method = $selectedEndpoint.Method
     }
 }
 
-# Exécution d'un palier de stress
+# Exécution d'un palier de stress avec une approche synchrone
 function Invoke-StressStep {
     param(
         [int]$Step,
@@ -135,64 +98,166 @@ function Invoke-StressStep {
     
     Write-Host "📊 PALIER $Step`: $Users utilisateurs pendant ${Duration}s" -ForegroundColor Cyan
     
-    # Initialisation des statistiques pour ce palier
-    $stepStats = @{
-        TotalRequests = 0
-        SuccessfulRequests = 0
-        FailedRequests = 0
-        TotalResponseTime = 0
-        MinResponseTime = [int]::MaxValue
-        MaxResponseTime = 0
-    }
+    # Initialisation des statistiques
+    $totalRequests = 0
+    $successfulRequests = 0
+    $failedRequests = 0
+    $totalResponseTime = 0
+    $minResponseTime = [int]::MaxValue
+    $maxResponseTime = 0
     
-    $stepRunning = $true
+    # Variables de contrôle
+    $startTime = Get-Date
+    $endTime = $startTime.AddSeconds($Duration)
+    $testRunning = $true
     
-    # Démarrage des utilisateurs
+    # Fichier temporaire pour le contrôle des threads
+    $controlFile = "stress-control-$Step.tmp"
+    "RUNNING" | Out-File -FilePath $controlFile
+    
+    # Démarrage des jobs utilisateurs avec script complet
     $userJobs = @()
     for ($i = 1; $i -le $Users; $i++) {
         $userJobs += Start-Job -ScriptBlock {
-            param($userId, $baseUrl, $stepStatsRef, $stepRunningRef)
+            param($userId, $baseUrl, $controlFilePath)
             
-            # Réplication des fonctions pour les jobs
-            function Invoke-StressRequest {
-                param($UserId, $BaseUrl, $StepStats)
-                # [Code de la fonction répliqué]
+            # Fonction de requête dans le job
+            function Invoke-JobStressRequest {
+                param($UserId, $BaseUrl)
+                
+                $endpoints = @(
+                    @{ Method = "GET"; Endpoint = "/" },
+                    @{ Method = "GET"; Endpoint = "/api/users" },
+                    @{ Method = "POST"; Endpoint = "/api/users"; Body = @{ name = "StressUser$UserId"; email = "stress$UserId@test.com" } },
+                    @{ Method = "GET"; Endpoint = "/api/products" },
+                    @{ Method = "GET"; Endpoint = "/api/orders" },
+                    @{ Method = "POST"; Endpoint = "/api/payment"; Body = @{ amount = (Get-Random -Minimum 10 -Maximum 500); card_token = "stress_tok_$UserId" } }
+                )
+                
+                $selectedEndpoint = $endpoints | Get-Random
+                $url = "$BaseUrl$($selectedEndpoint.Endpoint)"
+                
+                $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                $success = $false
+                
+                try {
+                    if ($selectedEndpoint.Body) {
+                        $jsonBody = $selectedEndpoint.Body | ConvertTo-Json
+                        Invoke-RestMethod -Uri $url -Method $selectedEndpoint.Method -Body $jsonBody -ContentType "application/json" -TimeoutSec 10 | Out-Null
+                    } else {
+                        Invoke-RestMethod -Uri $url -Method $selectedEndpoint.Method -TimeoutSec 10 | Out-Null
+                    }
+                    $success = $true
+                }
+                catch {
+                    $success = $false
+                }
+                finally {
+                    $stopwatch.Stop()
+                }
+                
+                return @{
+                    Success = $success
+                    ResponseTime = $stopwatch.ElapsedMilliseconds
+                    Timestamp = Get-Date
+                }
             }
             
-            function Start-StressUser {
-                param($UserId, $BaseUrl, $StepStats, $StepRunning)
-                # [Code de la fonction répliqué]
+            # Boucle principale du job
+            $results = @()
+            while ((Test-Path $controlFilePath) -and ((Get-Content $controlFilePath) -eq "RUNNING")) {
+                $result = Invoke-JobStressRequest -UserId $userId -BaseUrl $baseUrl
+                $results += $result
+                
+                # Pause aléatoire
+                Start-Sleep -Milliseconds (Get-Random -Minimum 50 -Maximum 200)
             }
             
-            Start-StressUser -UserId $userId -BaseUrl $baseUrl -StepStats $stepStatsRef -StepRunning $stepRunningRef
-        } -ArgumentList $i, $BaseUrl, ([ref]$stepStats), ([ref]$stepRunning)
+            return $results
+        } -ArgumentList $i, $BaseUrl, $controlFile
     }
     
     # Monitoring en temps réel
-    $startTime = Get-Date
-    $endTime = $startTime.AddSeconds($Duration)
-    
     while ((Get-Date) -lt $endTime) {
         Start-Sleep -Seconds 5
         
+        # Collecte des résultats partiels des jobs en cours
+        $partialResults = @()
+        foreach ($job in $userJobs) {
+            if ($job.State -eq "Running") {
+                try {
+                    $jobResults = Receive-Job -Job $job -Keep
+                    if ($jobResults) {
+                        $partialResults += $jobResults
+                    }
+                }
+                catch {
+                    # Ignore les erreurs de lecture partielle
+                }
+            }
+        }
+        
+        # Calcul des métriques en temps réel
+        if ($partialResults.Count -gt 0) {
+            $totalRequests = $partialResults.Count
+            $successfulRequests = ($partialResults | Where-Object { $_.Success }).Count
+            $failedRequests = $totalRequests - $successfulRequests
+            
+            if ($successfulRequests -gt 0) {
+                $successfulResults = $partialResults | Where-Object { $_.Success }
+                $totalResponseTime = ($successfulResults | Measure-Object -Property ResponseTime -Sum).Sum
+                $minResponseTime = ($successfulResults | Measure-Object -Property ResponseTime -Minimum).Minimum
+                $maxResponseTime = ($successfulResults | Measure-Object -Property ResponseTime -Maximum).Maximum
+            }
+        }
+        
         $elapsed = ((Get-Date) - $startTime).TotalSeconds
-        $rps = if ($elapsed -gt 0) { [math]::Round($stepStats.TotalRequests / $elapsed, 2) } else { 0 }
-        $avgTime = if ($stepStats.SuccessfulRequests -gt 0) { [math]::Round($stepStats.TotalResponseTime / $stepStats.SuccessfulRequests, 2) } else { 0 }
-        $errorRate = if ($stepStats.TotalRequests -gt 0) { [math]::Round(($stepStats.FailedRequests / $stepStats.TotalRequests) * 100, 2) } else { 0 }
+        $rps = if ($elapsed -gt 0) { [math]::Round($totalRequests / $elapsed, 2) } else { 0 }
+        $avgTime = if ($successfulRequests -gt 0) { [math]::Round($totalResponseTime / $successfulRequests, 2) } else { 0 }
+        $errorRate = if ($totalRequests -gt 0) { [math]::Round(($failedRequests / $totalRequests) * 100, 2) } else { 0 }
         
         Write-Host "`r📊 Palier $Step`: $([math]::Round($elapsed, 0))s | Users: $Users | Req/s: $rps | Avg: ${avgTime}ms | Erreurs: ${errorRate}%" -ForegroundColor Green -NoNewline
     }
     
     # Arrêt du palier
-    $stepRunning = $false
-    $userJobs | Stop-Job
-    $userJobs | Remove-Job
+    "STOPPED" | Out-File -FilePath $controlFile
+    
+    # Collecte des résultats finaux
+    $allResults = @()
+    foreach ($job in $userJobs) {
+        try {
+            $jobResults = Receive-Job -Job $job -Wait
+            if ($jobResults) {
+                $allResults += $jobResults
+            }
+        }
+        catch {
+            Write-Host "`n⚠️  Erreur lors de la collecte des résultats du job: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        Remove-Job -Job $job -Force
+    }
+    
+    # Nettoyage
+    Remove-Item -Path $controlFile -Force -ErrorAction SilentlyContinue
     
     # Calcul des statistiques finales
+    if ($allResults.Count -gt 0) {
+        $totalRequests = $allResults.Count
+        $successfulRequests = ($allResults | Where-Object { $_.Success }).Count
+        $failedRequests = $totalRequests - $successfulRequests
+        
+        if ($successfulRequests -gt 0) {
+            $successfulResults = $allResults | Where-Object { $_.Success }
+            $totalResponseTime = ($successfulResults | Measure-Object -Property ResponseTime -Sum).Sum
+            $minResponseTime = ($successfulResults | Measure-Object -Property ResponseTime -Minimum).Minimum
+            $maxResponseTime = ($successfulResults | Measure-Object -Property ResponseTime -Maximum).Maximum
+        }
+    }
+    
     $actualDuration = ((Get-Date) - $startTime).TotalSeconds
-    $finalRps = [math]::Round($stepStats.TotalRequests / $actualDuration, 2)
-    $finalAvgTime = if ($stepStats.SuccessfulRequests -gt 0) { [math]::Round($stepStats.TotalResponseTime / $stepStats.SuccessfulRequests, 2) } else { 0 }
-    $finalErrorRate = if ($stepStats.TotalRequests -gt 0) { [math]::Round(($stepStats.FailedRequests / $stepStats.TotalRequests) * 100, 2) } else { 0 }
+    $finalRps = if ($actualDuration -gt 0) { [math]::Round($totalRequests / $actualDuration, 2) } else { 0 }
+    $finalAvgTime = if ($successfulRequests -gt 0) { [math]::Round($totalResponseTime / $successfulRequests, 2) } else { 0 }
+    $finalErrorRate = if ($totalRequests -gt 0) { [math]::Round(($failedRequests / $totalRequests) * 100, 2) } else { 0 }
     
     # Métriques système
     $systemMetrics = Get-SystemMetrics
@@ -202,13 +267,13 @@ function Invoke-StressStep {
         Step = $Step
         Users = $Users
         Duration = [math]::Round($actualDuration, 2)
-        TotalRequests = $stepStats.TotalRequests
-        SuccessfulRequests = $stepStats.SuccessfulRequests
-        FailedRequests = $stepStats.FailedRequests
+        TotalRequests = $totalRequests
+        SuccessfulRequests = $successfulRequests
+        FailedRequests = $failedRequests
         RPS = $finalRps
         AvgResponseTime = $finalAvgTime
-        MinResponseTime = $stepStats.MinResponseTime
-        MaxResponseTime = $stepStats.MaxResponseTime
+        MinResponseTime = if ($minResponseTime -eq [int]::MaxValue) { 0 } else { $minResponseTime }
+        MaxResponseTime = $maxResponseTime
         ErrorRate = $finalErrorRate
         CPUUsage = $systemMetrics.CPU
         MemoryUsage = $systemMetrics.Memory
@@ -216,7 +281,7 @@ function Invoke-StressStep {
     
     Write-Host ""
     Write-Host "📋 Palier $Step terminé:" -ForegroundColor Cyan
-    Write-Host "   Requêtes: $($stepStats.TotalRequests) | Succès: $($stepStats.SuccessfulRequests) | Échecs: $($stepStats.FailedRequests)" -ForegroundColor White
+    Write-Host "   Requêtes: $totalRequests | Succès: $successfulRequests | Échecs: $failedRequests" -ForegroundColor White
     Write-Host "   RPS: $finalRps | Temps moyen: ${finalAvgTime}ms | Erreurs: ${finalErrorRate}%" -ForegroundColor White
     
     # Alertes de performance
@@ -239,6 +304,7 @@ try {
 }
 catch {
     Write-Host "❌ API non disponible. Arrêt du test." -ForegroundColor Red
+    Write-Host "💡 Assurez-vous que l'API Express est démarrée avec: docker-compose up" -ForegroundColor Yellow
     exit 1
 }
 Write-Host ""
@@ -288,7 +354,12 @@ foreach ($result in $Global:StressResults) {
 }
 
 Write-Host ""
-Write-Host "🏆 Meilleure performance: Palier $bestStep avec $bestRps req/s" -ForegroundColor Green
+if ($bestRps -gt 0) {
+    Write-Host "🏆 Meilleure performance: Palier $bestStep avec $bestRps req/s" -ForegroundColor Green
+} else {
+    Write-Host "⚠️  Aucune requête réussie détectée" -ForegroundColor Red
+}
+
 if ($worstErrorRate -gt 5) {
     Write-Host "⚠️  Palier critique: Palier $worstStep avec ${worstErrorRate}% d'erreurs" -ForegroundColor Red
 }
@@ -300,6 +371,9 @@ Write-Host "🎯 RECOMMANDATIONS DE CAPACITÉ:" -ForegroundColor Cyan
 if ($bestRps -gt 0) {
     $recommendedRps = [math]::Round($bestRps * 0.7, 2)
     Write-Host "   📊 Capacité recommandée: $recommendedRps req/s (70% du pic)" -ForegroundColor Green
+} else {
+    Write-Host "   ❌ Impossible de déterminer la capacité - Aucune requête réussie" -ForegroundColor Red
+    Write-Host "   💡 Vérifiez que l'API fonctionne correctement" -ForegroundColor Yellow
 }
 
 if ($worstErrorRate -gt 1) {

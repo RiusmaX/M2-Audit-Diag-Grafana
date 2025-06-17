@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  gatling:
+    image: denvazh/gatling:3.9.5
+    container_name: gatling-stress-test
+    volumes:
+      - ./gatling/user-files:/opt/gatling/user-files
+      - ./gatling/conf:/opt/gatling/conf
+      - ./gatling/results:/opt/gatling/results
+    environment:
+      - JAVA_OPTS=-Xmx2g -Xms1g
+    network_mode: host  # Pour accéder à localhost:3001
+    working_dir: /opt/gatling
+    command: >
+      sh -c "
+        echo '🚀 Démarrage des tests de stress Gatling...' &&
+        echo '📊 Configuration: 50 utilisateurs, 5 minutes' &&
+        echo '🎯 API cible: http://localhost:3001' &&
+        echo '' &&
+        ./bin/gatling.sh -sf user-files/simulations -s simulations.ExpressApiStressTest
+      "
+
+  # Service pour génération de rapports seulement
+  gatling-reports:
+    image: denvazh/gatling:3.9.5
+    container_name: gatling-reports
+    volumes:
+      - ./gatling/results:/opt/gatling/results
+      - ./gatling/reports:/opt/gatling/reports
+    working_dir: /opt/gatling
+    profiles: ["reports"]
+    command: >
+      sh -c "
+        echo '📊 Génération des rapports Gatling...' &&
+        for dir in results/*/; do
+          if [ -d \"\$dir\" ]; then
+            echo \"📈 Traitement: \$dir\" &&
+            ./bin/gatling.sh -ro \"\$dir\"
+          fi
+        done &&
+        echo '✅ Rapports générés dans ./gatling/reports/'
+      "
+
+  # Service Gatling avec interface web (optionnel)
+  gatling-enterprise:
+    image: gatlingcorp/gatling-enterprise-runner:latest
+    container_name: gatling-enterprise
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./gatling:/gatling
+    environment:
+      - GATLING_ENTERPRISE_URL=http://localhost:8080
+    profiles: ["enterprise"]
+    command: >
+      sh -c "
+        echo '🌐 Interface Gatling Enterprise disponible sur http://localhost:8080' &&
+        sleep infinity
+      "
+
+networks:
+  default:
+    external: true
+    name: bridge 
