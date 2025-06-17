@@ -606,7 +606,7 @@
         },
         {
           "datasource": "Prometheus",
-          "expr": "-irate(node_disk_written_bytes_total[5m])",
+          "expr": "irate(node_disk_written_bytes_total[5m])",
           "legendFormat": "✏️ Write {{device}}",
           "refId": "B"
         }
