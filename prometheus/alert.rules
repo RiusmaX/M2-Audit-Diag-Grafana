@@ -1,0 +1,52 @@
+groups:
+- name: system.rules
+  rules:
+  # Alerte si l'utilisation CPU > 80%
+  - alert: HighCpuUsage
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Utilisation CPU élevée sur {{ $labels.instance }}"
+      description: "L'utilisation CPU est de {{ $value }}% sur {{ $labels.instance }}"
+
+  # Alerte si l'utilisation mémoire > 85%
+  - alert: HighMemoryUsage
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Utilisation mémoire élevée sur {{ $labels.instance }}"
+      description: "L'utilisation mémoire est de {{ $value }}% sur {{ $labels.instance }}"
+
+  # Alerte si l'espace disque libre < 15%
+  - alert: LowDiskSpace
+    expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"})) * 100 > 85
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Espace disque faible sur {{ $labels.instance }}"
+      description: "L'espace disque utilisé est de {{ $value }}% sur le point de montage {{ $labels.mountpoint }}"
+
+  # Alerte si le service est down
+  - alert: ServiceDown
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Service {{ $labels.job }} arrêté"
+      description: "Le service {{ $labels.job }} sur {{ $labels.instance }} est inaccessible"
+
+  # Alerte si la charge système est élevée
+  - alert: HighSystemLoad
+    expr: node_load15 > 2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Charge système élevée sur {{ $labels.instance }}"
+      description: "La charge système sur 15 minutes est de {{ $value }} sur {{ $labels.instance }}" 
